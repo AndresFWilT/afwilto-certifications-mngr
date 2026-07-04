@@ -1,0 +1,59 @@
+package configs
+
+import (
+	"os"
+	"strconv"
+	"strings"
+)
+
+// Config holds all runtime configuration, resolved once from environment
+// variables with working local defaults (12-factor: env only).
+type Config struct {
+	Port           string
+	DatabaseURL    string
+	StorageDir     string
+	AllowOrigins   []string
+	MaxUploadBytes int64
+	MigrateOnStart bool
+}
+
+func Load() Config {
+	return Config{
+		Port:           envOr("PORT", "8082"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		StorageDir:     envOr("STORAGE_DIR", "./data/uploads"),
+		AllowOrigins:   splitOrigins(envOr("ALLOW_ORIGINS", "http://localhost:3000,http://localhost:3006")),
+		MaxUploadBytes: envInt64Or("MAX_UPLOAD_BYTES", 10485760),
+		MigrateOnStart: envOr("MIGRATE_ON_START", "true") == "true",
+	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func envInt64Or(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func splitOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			origins = append(origins, trimmed)
+		}
+	}
+	return origins
+}

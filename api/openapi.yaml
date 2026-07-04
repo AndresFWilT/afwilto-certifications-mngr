@@ -1,0 +1,422 @@
+openapi: 3.1.0
+info:
+  title: AFWILTO Certifications Manager
+  description: >
+    Personal learning-operations API: plan, organize, track and complete
+    professional certifications. Contract-first artifact for
+    docs/specs/11-certifications-journey.md — handlers are written to satisfy
+    this file and API tests assert conformance against it.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8082
+    description: Local Docker platform
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness probe (no DB access)
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /readyz:
+    get:
+      operationId: readyz
+      summary: Readiness probe (DB ping)
+      responses:
+        '200':
+          description: Ready — database reachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Not ready — database unreachable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/certifications:
+    get:
+      operationId: listCertifications
+      summary: List certifications (paginated, searchable, filterable)
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: search
+          in: query
+          description: Case-insensitive substring over name and goal
+          schema: { type: string }
+        - name: status
+          in: query
+          description: Repeatable status filter
+          explode: true
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/AchievementStatus' }
+        - name: category
+          in: query
+          description: Category path prefix ("TI / Cloud" matches "TI / Cloud / AWS")
+          schema: { type: string }
+        - name: year
+          in: query
+          description: Certification is active in this year (date interval intersects it)
+          schema: { type: integer }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, studyStartDate, expectedExamDate, achievedDate, createdAt]
+            default: createdAt
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        '200':
+          description: One page of certifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationListResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      operationId: createCertification
+      summary: Register a certification (category auto-created)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCertificationRequest'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+              description: URL of the new certification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/v1/certifications/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getCertification
+      summary: Certification detail including attachment metadata
+      responses:
+        '200':
+          description: The certification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateCertification
+      summary: Partial update (merge-patch semantics — only sent fields change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCertificationRequest'
+      responses:
+        '200':
+          description: Updated certification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      operationId: deleteCertification
+      summary: Soft delete — hides the certification everywhere, keeps the row
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/categories:
+    get:
+      operationId: listCategories
+      summary: Distinct categories in use, with non-deleted certification counts
+      responses:
+        '200':
+          description: Categories currently in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+
+  /api/v1/certifications/{id}/attachments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: uploadAttachment
+      summary: Upload certificate/diploma (replaces the existing one of that kind)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [kind, file]
+              properties:
+                kind: { $ref: '#/components/schemas/AttachmentKind' }
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Attachment stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: File exceeds 10 MB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Content type not one of application/pdf, image/png, image/jpeg (sniffed, not declared)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/v1/attachments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: downloadAttachment
+      summary: Stream the original file with its original filename and content type
+      responses:
+        '200':
+          description: The file
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteAttachment
+      summary: Remove one attachment
+      responses:
+        '204':
+          description: Removed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  responses:
+    NotFound:
+      description: Resource does not exist (or is soft-deleted)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: { code: not_found, message: certification not found }
+    ValidationFailed:
+      description: Shape or business-rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: validation_failed
+              message: validation failed
+              details:
+                - field: expectedExamDate
+                  rule: date_order
+                  message: expected exam date must be on or after study start date
+
+  schemas:
+    AchievementStatus:
+      type: string
+      enum: [planned, in_progress, achieved]
+
+    AttachmentKind:
+      type: string
+      enum: [certificate, diploma]
+
+    Category:
+      type: object
+      required: [id, path]
+      properties:
+        id: { type: string, format: uuid }
+        path:
+          type: string
+          description: Display form, e.g. 'TI / Cloud / AWS'
+        count:
+          type: integer
+          description: Non-deleted certifications using it (GET /categories only)
+
+    Attachment:
+      type: object
+      required: [id, kind, fileName, contentType, sizeBytes]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/AttachmentKind' }
+        fileName: { type: string }
+        contentType:
+          type: string
+          enum: [application/pdf, image/png, image/jpeg]
+        sizeBytes: { type: integer }
+
+    Certification:
+      type: object
+      required: [id, name, category, status, attachments, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 200 }
+        category: { $ref: '#/components/schemas/Category' }
+        status: { $ref: '#/components/schemas/AchievementStatus' }
+        studyStartDate: { type: ['string', 'null'], format: date }
+        expectedExamDate: { type: ['string', 'null'], format: date }
+        goal: { type: ['string', 'null'], maxLength: 2000 }
+        achievedDate: { type: ['string', 'null'], format: date }
+        credlyUrl: { type: ['string', 'null'], format: uri }
+        officialUrl: { type: ['string', 'null'], format: uri }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/Attachment' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateCertificationRequest:
+      type: object
+      required: [name, category]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        category:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Raw hierarchical path — resolver normalizes and auto-creates
+        studyStartDate: { type: ['string', 'null'], format: date }
+        expectedExamDate: { type: ['string', 'null'], format: date }
+        goal: { type: ['string', 'null'], maxLength: 2000 }
+
+    UpdateCertificationRequest:
+      type: object
+      description: All fields optional; absent means unchanged (merge-patch semantics)
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        category: { type: string, minLength: 1, maxLength: 120 }
+        studyStartDate: { type: ['string', 'null'], format: date }
+        expectedExamDate: { type: ['string', 'null'], format: date }
+        goal: { type: ['string', 'null'], maxLength: 2000 }
+        status: { $ref: '#/components/schemas/AchievementStatus' }
+        achievedDate: { type: ['string', 'null'], format: date }
+        credlyUrl: { type: ['string', 'null'], format: uri }
+        officialUrl: { type: ['string', 'null'], format: uri }
+
+    ListMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalItems: { type: integer }
+        totalPages: { type: integer }
+
+    CertificationResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Certification' }
+
+    CertificationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Certification' }
+        meta: { $ref: '#/components/schemas/ListMeta' }
+
+    CategoryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+
+    AttachmentResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Attachment' }
+
+    HealthResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [ok] }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [validation_failed, not_found, payload_too_large, unsupported_media_type, internal]
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, rule, message]
+                properties:
+                  field: { type: string }
+                  rule: { type: string }
+                  message: { type: string }
