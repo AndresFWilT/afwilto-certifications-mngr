@@ -2,6 +2,7 @@ package in
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/afwilto/certifications-mngr/internal/certification/domain"
@@ -59,6 +60,30 @@ type UpdateCertification interface {
 
 type DeleteCertification interface {
 	Execute(ctx context.Context, id string) error
+}
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+
+type UploadAttachmentCommand struct {
+	CertificationID string
+	Kind            string
+	FileName        string
+	ContentType     string // sniffed by the adapter, never the declared header
+	SizeBytes       int64
+	Content         io.Reader
+}
+
+type UploadAttachment interface {
+	Execute(ctx context.Context, cmd UploadAttachmentCommand) (domain.Attachment, error)
+}
+
+type DownloadAttachment interface {
+	// Execute returns the metadata and an open stream the caller must close.
+	Execute(ctx context.Context, attachmentID string) (domain.Attachment, io.ReadCloser, error)
+}
+
+type DeleteAttachment interface {
+	Execute(ctx context.Context, attachmentID string) error
 }
 
 // ── List ────────────────────────────────────────────────────────────────────

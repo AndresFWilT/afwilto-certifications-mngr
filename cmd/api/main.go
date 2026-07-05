@@ -14,6 +14,7 @@ import (
 
 	"github.com/afwilto/certifications-mngr/configs"
 	certhttp "github.com/afwilto/certifications-mngr/internal/certification/adapter/in/http"
+	"github.com/afwilto/certifications-mngr/internal/certification/adapter/out/fsstore"
 	"github.com/afwilto/certifications-mngr/internal/certification/adapter/out/postgres"
 	"github.com/afwilto/certifications-mngr/internal/certification/adapter/out/system"
 	"github.com/afwilto/certifications-mngr/internal/certification/app/usecase"
@@ -47,16 +48,21 @@ func main() {
 	ids := system.UUIDv7Generator{}
 	certRepo := postgres.NewCertificationRepository(pool)
 	categoryRepo := postgres.NewCategoryRepository(pool, ids)
+	storage := fsstore.NewDiskFileStorage(cfg.StorageDir)
 
 	router := certhttp.NewRouter(certhttp.RouterDeps{
-		Pinger:         pool,
-		AllowOrigins:   cfg.AllowOrigins,
-		Create:         usecase.NewCreateService(certRepo, categoryRepo, clock, ids),
-		Get:            usecase.NewGetService(certRepo),
-		Update:         usecase.NewUpdateService(certRepo, categoryRepo, clock),
-		Delete:         usecase.NewDeleteService(certRepo, clock),
-		List:           usecase.NewListService(certRepo),
-		ListCategories: usecase.NewListCategoriesService(categoryRepo),
+		Pinger:           pool,
+		AllowOrigins:     cfg.AllowOrigins,
+		Create:           usecase.NewCreateService(certRepo, categoryRepo, clock, ids),
+		Get:              usecase.NewGetService(certRepo),
+		Update:           usecase.NewUpdateService(certRepo, categoryRepo, clock),
+		Delete:           usecase.NewDeleteService(certRepo, clock),
+		List:             usecase.NewListService(certRepo),
+		ListCategories:   usecase.NewListCategoriesService(categoryRepo),
+		Upload:           usecase.NewUploadAttachmentService(certRepo, storage, clock, ids),
+		Download:         usecase.NewDownloadAttachmentService(certRepo, storage),
+		RemoveAttachment: usecase.NewDeleteAttachmentService(certRepo, storage, clock),
+		MaxUploadBytes:   cfg.MaxUploadBytes,
 	})
 
 	server := &http.Server{

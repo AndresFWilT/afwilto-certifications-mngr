@@ -18,6 +18,11 @@ type RouterDeps struct {
 	Delete         in.DeleteCertification
 	List           in.ListCertifications
 	ListCategories in.ListCategories
+
+	Upload           in.UploadAttachment
+	Download         in.DownloadAttachment
+	RemoveAttachment in.DeleteAttachment
+	MaxUploadBytes   int64
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -32,6 +37,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/certifications/{id}", handleUpdateCertification(deps.Update))
 	mux.HandleFunc("DELETE /api/v1/certifications/{id}", handleDeleteCertification(deps.Delete))
 	mux.HandleFunc("GET /api/v1/categories", handleListCategories(deps.ListCategories))
+	mux.HandleFunc("POST /api/v1/certifications/{id}/attachments", handleUploadAttachment(deps.Upload, deps.MaxUploadBytes))
+	mux.HandleFunc("GET /api/v1/attachments/{id}", handleDownloadAttachment(deps.Download))
+	mux.HandleFunc("DELETE /api/v1/attachments/{id}", handleDeleteAttachment(deps.RemoveAttachment))
 
 	var handler http.Handler = mux
 	handler = corsMiddleware(deps.AllowOrigins, handler)

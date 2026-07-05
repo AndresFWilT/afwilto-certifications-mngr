@@ -6,6 +6,8 @@ package testsupport
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -166,4 +168,39 @@ func (r *FakeCategoryRepo) ListInUse(_ context.Context) ([]domain.CategoryWithCo
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path.Display() < out[j].Path.Display() })
 	return out, nil
+}
+
+// FakeFileStorage implements out.FileStorage in memory.
+type FakeFileStorage struct {
+	Blobs map[string][]byte
+}
+
+func NewFakeFileStorage() *FakeFileStorage {
+	return &FakeFileStorage{Blobs: map[string][]byte{}}
+}
+
+func (s *FakeFileStorage) Put(_ context.Context, key string, content io.Reader) error {
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return err
+	}
+	s.Blobs[key] = data
+	return nil
+}
+
+type nopCloser struct{ *strings.Reader }
+
+func (nopCloser) Close() error { return nil }
+
+func (s *FakeFileStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	data, ok := s.Blobs[key]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return nopCloser{strings.NewReader(string(data))}, nil
+}
+
+func (s *FakeFileStorage) Delete(_ context.Context, key string) error {
+	delete(s.Blobs, key)
+	return nil
 }

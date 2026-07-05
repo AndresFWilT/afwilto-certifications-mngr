@@ -20,21 +20,28 @@ type apiEnv struct {
 func newAPIEnv() apiEnv {
 	certs := testsupport.NewFakeCertRepo()
 	categories := testsupport.NewFakeCategoryRepo(certs)
+	storage := testsupport.NewFakeFileStorage()
 	clock := testsupport.FixedClock{Instant: testsupport.FixedNow}
 	ids := &testsupport.SeqIDGen{}
 
 	router := NewRouter(RouterDeps{
-		Pinger:         stubPinger{},
-		AllowOrigins:   []string{"http://localhost:3000"},
-		Create:         usecase.NewCreateService(certs, categories, clock, ids),
-		Get:            usecase.NewGetService(certs),
-		Update:         usecase.NewUpdateService(certs, categories, clock),
-		Delete:         usecase.NewDeleteService(certs, clock),
-		List:           usecase.NewListService(certs),
-		ListCategories: usecase.NewListCategoriesService(categories),
+		Pinger:           stubPinger{},
+		AllowOrigins:     []string{"http://localhost:3000"},
+		Create:           usecase.NewCreateService(certs, categories, clock, ids),
+		Get:              usecase.NewGetService(certs),
+		Update:           usecase.NewUpdateService(certs, categories, clock),
+		Delete:           usecase.NewDeleteService(certs, clock),
+		List:             usecase.NewListService(certs),
+		ListCategories:   usecase.NewListCategoriesService(categories),
+		Upload:           usecase.NewUploadAttachmentService(certs, storage, clock, ids),
+		Download:         usecase.NewDownloadAttachmentService(certs, storage),
+		RemoveAttachment: usecase.NewDeleteAttachmentService(certs, storage, clock),
+		MaxUploadBytes:   maxTestUploadBytes,
 	})
 	return apiEnv{router: router, certs: certs}
 }
+
+const maxTestUploadBytes = 10 * 1024 * 1024
 
 func (e apiEnv) do(t *testing.T, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
