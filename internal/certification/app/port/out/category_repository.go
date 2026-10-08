@@ -6,10 +6,12 @@ import (
 	"github.com/afwilto/certifications-mngr/internal/certification/domain"
 )
 
-// CategoryRepository realizes the CategoryResolver rule together with the
-// CategoryPath VO: categories are created implicitly on first use and listed
-// only while non-deleted certifications reference them.
+// CategoryRepository is an explicit CRUD surface: categories are an
+// admin-managed resource, never auto-created on certification write.
 type CategoryRepository interface {
-	GetOrCreate(ctx context.Context, path domain.CategoryPath) (domain.Category, error)
-	ListInUse(ctx context.Context) ([]domain.CategoryWithCount, error)
+	Create(ctx context.Context, path domain.CategoryPath, color domain.CategoryColor) (domain.Category, error)
+	Update(ctx context.Context, id string, path domain.CategoryPath, color domain.CategoryColor) (domain.Category, error)
+	Delete(ctx context.Context, id string) error
+	GetByPath(ctx context.Context, path domain.CategoryPath) (domain.Category, error)
+	List(ctx context.Context) ([]domain.CategoryWithCount, error)
 }

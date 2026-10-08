@@ -26,7 +26,7 @@ func NewCertificationRepository(pool *pgxpool.Pool) *CertificationRepository {
 
 const certColumns = `c.id, c.name, c.goal, c.status, c.study_start_date, c.expected_exam_date,
 	c.achieved_date, c.credly_url, c.official_url, c.created_at, c.updated_at, c.deleted_at,
-	k.id, k.path, k.normalized_path`
+	k.id, k.path, k.normalized_path, k.color`
 
 func (r *CertificationRepository) Save(ctx context.Context, cert *domain.Certification) error {
 	tx, err := r.pool.Begin(ctx)
@@ -210,7 +210,7 @@ func (r *CertificationRepository) FindPage(ctx context.Context, query domain.Lis
 		if err := rows.Scan(
 			&cr.ID, &cr.Name, &cr.Goal, &cr.Status, &cr.StudyStartDate, &cr.ExpectedExamDate,
 			&cr.AchievedDate, &cr.CredlyURL, &cr.OfficialURL, &cr.CreatedAt, &cr.UpdatedAt, &cr.DeletedAt,
-			&cr.CategoryID, &cr.CategoryPath, &cr.CategoryNorm, &total); err != nil {
+			&cr.CategoryID, &cr.CategoryPath, &cr.CategoryNorm, &cr.CategoryColor, &total); err != nil {
 			return domain.Page{}, err
 		}
 		certRows = append(certRows, cr)
@@ -270,7 +270,7 @@ func scanCertRow(row rowScanner) (certRow, error) {
 	err := row.Scan(
 		&cr.ID, &cr.Name, &cr.Goal, &cr.Status, &cr.StudyStartDate, &cr.ExpectedExamDate,
 		&cr.AchievedDate, &cr.CredlyURL, &cr.OfficialURL, &cr.CreatedAt, &cr.UpdatedAt, &cr.DeletedAt,
-		&cr.CategoryID, &cr.CategoryPath, &cr.CategoryNorm)
+		&cr.CategoryID, &cr.CategoryPath, &cr.CategoryNorm, &cr.CategoryColor)
 	return cr, err
 }
 

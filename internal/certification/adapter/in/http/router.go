@@ -18,6 +18,9 @@ type RouterDeps struct {
 	Delete         in.DeleteCertification
 	List           in.ListCertifications
 	ListCategories in.ListCategories
+	CreateCategory in.CreateCategory
+	UpdateCategory in.UpdateCategory
+	DeleteCategory in.DeleteCategory
 
 	Upload           in.UploadAttachment
 	Download         in.DownloadAttachment
@@ -37,6 +40,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/certifications/{id}", handleUpdateCertification(deps.Update))
 	mux.HandleFunc("DELETE /api/v1/certifications/{id}", handleDeleteCertification(deps.Delete))
 	mux.HandleFunc("GET /api/v1/categories", handleListCategories(deps.ListCategories))
+	mux.HandleFunc("POST /api/v1/categories", handleCreateCategory(deps.CreateCategory))
+	mux.HandleFunc("PATCH /api/v1/categories/{id}", handleUpdateCategory(deps.UpdateCategory))
+	mux.HandleFunc("DELETE /api/v1/categories/{id}", handleDeleteCategory(deps.DeleteCategory))
 	mux.HandleFunc("POST /api/v1/certifications/{id}/attachments", handleUploadAttachment(deps.Upload, deps.MaxUploadBytes))
 	mux.HandleFunc("GET /api/v1/attachments/{id}", handleDownloadAttachment(deps.Download))
 	mux.HandleFunc("DELETE /api/v1/attachments/{id}", handleDeleteAttachment(deps.RemoveAttachment))

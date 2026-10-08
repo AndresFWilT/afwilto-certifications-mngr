@@ -133,41 +133,82 @@ func (r *FakeCertRepo) FindByAttachmentID(_ context.Context, attachmentID string
 
 // FakeCategoryRepo implements out.CategoryRepository in memory.
 type FakeCategoryRepo struct {
-	ByNormalized map[string]domain.Category
+	ByID         map[string]domain.Category
+	ByNormalized map[string]string // normalized path -> id
 	Certs        *FakeCertRepo
 	ids          SeqIDGen
 }
 
 func NewFakeCategoryRepo(certs *FakeCertRepo) *FakeCategoryRepo {
-	return &FakeCategoryRepo{ByNormalized: map[string]domain.Category{}, Certs: certs, ids: SeqIDGen{N: 9000}}
+	return &FakeCategoryRepo{
+		ByID:         map[string]domain.Category{},
+		ByNormalized: map[string]string{},
+		Certs:        certs,
+		ids:          SeqIDGen{N: 9000},
+	}
 }
 
-func (r *FakeCategoryRepo) GetOrCreate(_ context.Context, path domain.CategoryPath) (domain.Category, error) {
-	if c, ok := r.ByNormalized[path.Normalized()]; ok {
-		return c, nil
-	}
-	c := domain.Category{ID: r.ids.NewID(), Path: path}
-	r.ByNormalized[path.Normalized()] = c
+func (r *FakeCategoryRepo) Create(_ context.Context, path domain.CategoryPath, color domain.CategoryColor) (domain.Category, error) {
+	c := domain.Category{ID: r.ids.NewID(), Path: path, Color: color}
+	r.ByID[c.ID] = c
+	r.ByNormalized[path.Normalized()] = c.ID
 	return c, nil
 }
 
-func (r *FakeCategoryRepo) ListInUse(_ context.Context) ([]domain.CategoryWithCount, error) {
-	counts := map[string]int{}
-	if r.Certs != nil {
-		for _, c := range r.Certs.Certs {
-			if c.DeletedAt() == nil {
-				counts[c.Category().ID]++
-			}
-		}
+func (r *FakeCategoryRepo) Update(_ context.Context, id string, path domain.CategoryPath, color domain.CategoryColor) (domain.Category, error) {
+	existing, ok := r.ByID[id]
+	if !ok {
+		return domain.Category{}, domain.ErrNotFound
 	}
+	delete(r.ByNormalized, existing.Path.Normalized())
+	updated := domain.Category{ID: id, Path: path, Color: color}
+	r.ByID[id] = updated
+	r.ByNormalized[path.Normalized()] = id
+	return updated, nil
+}
+
+func (r *FakeCategoryRepo) Delete(_ context.Context, id string) error {
+	cat, ok := r.ByID[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n := r.countFor(id)
+	if n > 0 {
+		return domain.SingleViolation("category", "in_use", fmt.Sprintf("category is used by %d certification(s)", n))
+	}
+	delete(r.ByID, id)
+	delete(r.ByNormalized, cat.Path.Normalized())
+	return nil
+}
+
+func (r *FakeCategoryRepo) GetByPath(_ context.Context, path domain.CategoryPath) (domain.Category, error) {
+	id, ok := r.ByNormalized[path.Normalized()]
+	if !ok {
+		return domain.Category{}, domain.ErrNotFound
+	}
+	return r.ByID[id], nil
+}
+
+func (r *FakeCategoryRepo) List(_ context.Context) ([]domain.CategoryWithCount, error) {
 	var out []domain.CategoryWithCount
-	for _, cat := range r.ByNormalized {
-		if n := counts[cat.ID]; n > 0 {
-			out = append(out, domain.CategoryWithCount{Category: cat, Count: n})
-		}
+	for _, cat := range r.ByID {
+		out = append(out, domain.CategoryWithCount{Category: cat, Count: r.countFor(cat.ID)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path.Display() < out[j].Path.Display() })
 	return out, nil
+}
+
+func (r *FakeCategoryRepo) countFor(categoryID string) int {
+	if r.Certs == nil {
+		return 0
+	}
+	n := 0
+	for _, c := range r.Certs.Certs {
+		if c.DeletedAt() == nil && c.Category().ID == categoryID {
+			n++
+		}
+	}
+	return n
 }
 
 // FakeFileStorage implements out.FileStorage in memory.

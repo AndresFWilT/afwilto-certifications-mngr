@@ -95,3 +95,27 @@ type ListCertifications interface {
 type ListCategories interface {
 	Execute(ctx context.Context) ([]domain.CategoryWithCount, error)
 }
+
+// ── Category CRUD ───────────────────────────────────────────────────────────
+
+type CreateCategoryCommand struct {
+	Path  string
+	Color string
+}
+
+type CreateCategory interface {
+	Execute(ctx context.Context, cmd CreateCategoryCommand) (domain.Category, error)
+}
+
+type UpdateCategoryCommand struct {
+	Path  *string
+	Color *string
+}
+
+type UpdateCategory interface {
+	Execute(ctx context.Context, id string, cmd UpdateCategoryCommand) (domain.Category, error)
+}
+
+type DeleteCategory interface {
+	Execute(ctx context.Context, id string) error
+}

@@ -32,5 +32,5 @@ func NewListCategoriesService(categories out.CategoryRepository) in.ListCategori
 }
 
 func (s *listCategoriesService) Execute(ctx context.Context) ([]domain.CategoryWithCount, error) {
-	return s.categories.ListInUse(ctx)
+	return s.categories.List(ctx)
 }

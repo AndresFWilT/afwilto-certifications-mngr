@@ -131,12 +131,37 @@ func (r updateRequest) toCommand() (in.UpdateCommand, error) {
 	}, nil
 }
 
+// ── Category requests ───────────────────────────────────────────────────────
+
+type createCategoryRequest struct {
+	Path  string `json:"path"`
+	Color string `json:"color"`
+}
+
+func (r createCategoryRequest) toCommand() in.CreateCategoryCommand {
+	return in.CreateCategoryCommand{Path: r.Path, Color: r.Color}
+}
+
+type updateCategoryRequest struct {
+	Path  *string `json:"path,omitempty"`
+	Color *string `json:"color,omitempty"`
+}
+
+func (r updateCategoryRequest) toCommand() in.UpdateCategoryCommand {
+	return in.UpdateCategoryCommand{Path: r.Path, Color: r.Color}
+}
+
 // ── Responses ───────────────────────────────────────────────────────────────
 
 type categoryDTO struct {
 	ID    string `json:"id"`
 	Path  string `json:"path"`
+	Color string `json:"color"`
 	Count *int   `json:"count,omitempty"`
+}
+
+func toCategoryDTO(cat domain.Category) categoryDTO {
+	return categoryDTO{ID: cat.ID, Path: cat.Path.Display(), Color: cat.Color.String()}
 }
 
 type attachmentDTO struct {
@@ -175,12 +200,9 @@ func toCertificationDTO(cert *domain.Certification) certificationDTO {
 		})
 	}
 	return certificationDTO{
-		ID:   cert.ID(),
-		Name: cert.Name().String(),
-		Category: categoryDTO{
-			ID:   cert.Category().ID,
-			Path: cert.Category().Path.Display(),
-		},
+		ID:               cert.ID(),
+		Name:             cert.Name().String(),
+		Category:         toCategoryDTO(cert.Category()),
 		Status:           string(cert.Status()),
 		StudyStartDate:   formatDate(cert.Period().Start()),
 		ExpectedExamDate: formatDate(cert.Period().Exam()),

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 
 	"github.com/afwilto/certifications-mngr/internal/certification/app/port/in"
 	"github.com/afwilto/certifications-mngr/internal/certification/app/port/out"
@@ -70,8 +71,11 @@ func (s *updateService) Execute(ctx context.Context, id string, cmd in.UpdateCom
 		if err != nil {
 			return nil, err
 		}
-		category, err := s.categories.GetOrCreate(ctx, path)
+		category, err := s.categories.GetByPath(ctx, path)
 		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return nil, domain.SingleViolation("category", "exists", "category does not exist — create it first")
+			}
 			return nil, err
 		}
 		if err := cert.Recategorize(category, now); err != nil {

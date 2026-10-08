@@ -22,6 +22,7 @@ type certRow struct {
 	CategoryID       string
 	CategoryPath     string
 	CategoryNorm     string
+	CategoryColor    string
 }
 
 type attachmentRow struct {
@@ -59,7 +60,7 @@ func (r certRow) toDomain(attachments []attachmentRow) (*domain.Certification, e
 	return domain.Rehydrate(
 		r.ID,
 		name,
-		domain.Category{ID: r.CategoryID, Path: domain.RehydrateCategoryPath(r.CategoryPath, r.CategoryNorm)},
+		domain.Category{ID: r.CategoryID, Path: domain.RehydrateCategoryPath(r.CategoryPath, r.CategoryNorm), Color: domain.RehydrateCategoryColor(r.CategoryColor)},
 		period,
 		r.Goal,
 		domain.AchievementStatus(r.Status),

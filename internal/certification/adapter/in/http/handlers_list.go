@@ -105,7 +105,9 @@ func handleListCategories(list in.ListCategories) http.HandlerFunc {
 		items := make([]categoryDTO, 0, len(categories))
 		for _, c := range categories {
 			count := c.Count
-			items = append(items, categoryDTO{ID: c.ID, Path: c.Path.Display(), Count: &count})
+			dto := toCategoryDTO(c.Category)
+			dto.Count = &count
+			items = append(items, dto)
 		}
 		writeData(w, http.StatusOK, items)
 	}

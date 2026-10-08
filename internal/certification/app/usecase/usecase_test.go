@@ -52,8 +52,20 @@ func wantViolationOn(t *testing.T, err error, field string) {
 	t.Fatalf("violations = %+v, want one on %q", v.Violations, field)
 }
 
+func mustSeedCategory(t *testing.T, e env, path string) domain.Category {
+	t.Helper()
+	cat, err := NewCreateCategoryService(e.categories).Execute(context.Background(), in.CreateCategoryCommand{
+		Path: path, Color: "#22D3EE",
+	})
+	if err != nil {
+		t.Fatalf("seeding category %q: %v", path, err)
+	}
+	return cat
+}
+
 func createFull(t *testing.T, e env) *domain.Certification {
 	t.Helper()
+	mustSeedCategory(t, e, "TI / Cloud / AWS")
 	goal := "Need this before applying to Senior Cloud Architect."
 	svc := NewCreateService(e.certs, e.categories, e.clock, e.ids)
 	cert, err := svc.Execute(context.Background(), in.CreateCommand{
@@ -91,6 +103,7 @@ func TestCreateFullData(t *testing.T) {
 
 func TestCreateReusesNormalizedCategory(t *testing.T) {
 	e := newEnv()
+	mustSeedCategory(t, e, "Soft Skills")
 	svc := NewCreateService(e.certs, e.categories, e.clock, e.ids)
 
 	a, err := svc.Execute(context.Background(), in.CreateCommand{Name: "One", Category: "  Soft Skills  "})
@@ -111,6 +124,7 @@ func TestCreateReusesNormalizedCategory(t *testing.T) {
 
 func TestCreateRejectsDateOrder(t *testing.T) {
 	e := newEnv()
+	mustSeedCategory(t, e, "TI")
 	svc := NewCreateService(e.certs, e.categories, e.clock, e.ids)
 	_, err := svc.Execute(context.Background(), in.CreateCommand{
 		Name:             "X",
@@ -123,6 +137,7 @@ func TestCreateRejectsDateOrder(t *testing.T) {
 
 func TestCreateRejectsDuplicateNameCaseInsensitive(t *testing.T) {
 	e := newEnv()
+	mustSeedCategory(t, e, "TI")
 	svc := NewCreateService(e.certs, e.categories, e.clock, e.ids)
 	if _, err := svc.Execute(context.Background(), in.CreateCommand{Name: "CKA", Category: "TI"}); err != nil {
 		t.Fatal(err)
@@ -301,6 +316,7 @@ func TestUpdateDuplicateNameExcludesSelf(t *testing.T) {
 		t.Fatalf("self-rename rejected: %v", err)
 	}
 
+	mustSeedCategory(t, e, "TI")
 	create := NewCreateService(e.certs, e.categories, e.clock, e.ids)
 	if _, err := create.Execute(context.Background(), in.CreateCommand{Name: "CKA", Category: "TI"}); err != nil {
 		t.Fatal(err)

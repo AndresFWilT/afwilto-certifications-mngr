@@ -78,7 +78,14 @@ func assertConformsToContract(t *testing.T, method, path string, rec *httptest.R
 func TestContractConformance(t *testing.T) {
 	e := newAPIEnv()
 
-	rec := e.do(t, http.MethodPost, "/api/v1/certifications",
+	rec := e.do(t, http.MethodPost, "/api/v1/categories", `{"path":"TI / Cloud","color":"#22D3EE"}`)
+	assertConformsToContract(t, http.MethodPost, "/api/v1/categories", rec)
+	categoryID := decodeData(t, rec)["id"].(string)
+
+	rec = e.do(t, http.MethodPatch, "/api/v1/categories/"+categoryID, `{"color":"#34D399"}`)
+	assertConformsToContract(t, http.MethodPatch, "/api/v1/categories/"+categoryID, rec)
+
+	rec = e.do(t, http.MethodPost, "/api/v1/certifications",
 		`{"name":"Contract Cert","category":"TI / Cloud","studyStartDate":"2026-08-01","goal":"conformance"}`)
 	assertConformsToContract(t, http.MethodPost, "/api/v1/certifications", rec)
 	id := decodeData(t, rec)["id"].(string)
@@ -94,6 +101,14 @@ func TestContractConformance(t *testing.T) {
 
 	rec = e.do(t, http.MethodGet, "/api/v1/categories", "")
 	assertConformsToContract(t, http.MethodGet, "/api/v1/categories", rec)
+
+	rec = e.do(t, http.MethodPost, "/api/v1/categories", `{"path":"Unused","color":"#A78BFA"}`)
+	assertConformsToContract(t, http.MethodPost, "/api/v1/categories", rec)
+	unusedID := decodeData(t, rec)["id"].(string)
+	rec = e.do(t, http.MethodDelete, "/api/v1/categories/"+unusedID, "")
+	assertConformsToContract(t, http.MethodDelete, "/api/v1/categories/"+unusedID, rec)
+	rec = e.do(t, http.MethodPatch, "/api/v1/categories/00000000-0000-7000-8000-000000000000", `{"color":"#A78BFA"}`)
+	assertConformsToContract(t, http.MethodPatch, "/api/v1/categories/00000000-0000-7000-8000-000000000000", rec)
 
 	rec = e.do(t, http.MethodGet, "/api/v1/certifications/00000000-0000-7000-8000-000000000000", "")
 	assertConformsToContract(t, http.MethodGet, "/api/v1/certifications/00000000-0000-7000-8000-000000000000", rec)

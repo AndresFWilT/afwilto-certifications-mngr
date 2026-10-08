@@ -92,7 +92,7 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
     post:
       operationId: createCertification
-      summary: Register a certification (category auto-created)
+      summary: Register a certification (category must already exist)
       requestBody:
         required: true
         content:
@@ -163,14 +163,69 @@ paths:
   /api/v1/categories:
     get:
       operationId: listCategories
-      summary: Distinct categories in use, with non-deleted certification counts
+      summary: Every category, with non-deleted certification counts (0 if unused)
       responses:
         '200':
-          description: Categories currently in use
+          description: All categories
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CategoryListResponse'
+    post:
+      operationId: createCategory
+      summary: Create a category with a required, user-chosen hex color
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/v1/categories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateCategory
+      summary: Rename and/or recolor a category (at least one field required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+      responses:
+        '200':
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      operationId: deleteCategory
+      summary: Hard delete — only allowed when unused by any living certification
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 
   /api/v1/certifications/{id}/attachments:
     parameters:
@@ -281,15 +336,37 @@ components:
 
     Category:
       type: object
-      required: [id, path]
+      required: [id, path, color]
       properties:
         id: { type: string, format: uuid }
         path:
           type: string
           description: Display form, e.g. 'TI / Cloud / AWS'
+        color:
+          type: string
+          pattern: '^#[0-9A-F]{6}$'
+          description: Persisted, user-chosen hex color, uppercase
         count:
           type: integer
-          description: Non-deleted certifications using it (GET /categories only)
+          description: Non-deleted certifications using it (GET/POST/PATCH/DELETE /categories only)
+
+    CreateCategoryRequest:
+      type: object
+      required: [path, color]
+      properties:
+        path: { type: string, minLength: 1, maxLength: 120 }
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+
+    UpdateCategoryRequest:
+      type: object
+      description: At least one of path or color must be present
+      properties:
+        path: { type: string, minLength: 1, maxLength: 120 }
+        color:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
 
     Attachment:
       type: object
@@ -332,7 +409,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
-          description: Raw hierarchical path — resolver normalizes and auto-creates
+          description: >-
+            Existing category's path (normalized/case-insensitive match) — an
+            unknown path is rejected with a 422 "exists" violation, it is
+            never auto-created
         studyStartDate: { type: ['string', 'null'], format: date }
         expectedExamDate: { type: ['string', 'null'], format: date }
         goal: { type: ['string', 'null'], maxLength: 2000 }
@@ -382,6 +462,12 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/Category' }
+
+    CategoryResponse:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Category' }
 
     AttachmentResponse:
       type: object

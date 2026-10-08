@@ -113,6 +113,29 @@ func datePtr(s string) *time.Time {
 	return &d
 }
 
+// mustGetOrCreateCategory mirrors the pre-explicit-CRUD GetOrCreate
+// convenience for test setup: the category repository itself now requires
+// callers to create a category before referencing it, but many table tests
+// below only care about certification behavior and reuse the same category
+// path across many certs.
+func (e repoEnv) mustGetOrCreateCategory(t *testing.T, path domain.CategoryPath) domain.Category {
+	t.Helper()
+	ctx := context.Background()
+	cat, err := e.categories.GetByPath(ctx, path)
+	if err == nil {
+		return cat
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatal(err)
+	}
+	color, _ := domain.NewCategoryColor("#22D3EE")
+	cat, err = e.categories.Create(ctx, path, color)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cat
+}
+
 func (e repoEnv) newCert(t *testing.T, name, category string, start, exam *time.Time) *domain.Certification {
 	t.Helper()
 	ctx := context.Background()
@@ -124,10 +147,7 @@ func (e repoEnv) newCert(t *testing.T, name, category string, start, exam *time.
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, err := e.categories.GetOrCreate(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cat := e.mustGetOrCreateCategory(t, path)
 	period, err := domain.NewStudyPeriod(start, exam)
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +249,7 @@ func TestUniqueIndexBackstop(t *testing.T) {
 	ctx := context.Background()
 	n, _ := domain.NewCertificationName("same name")
 	path, _ := domain.NewCategoryPath("TI")
-	cat, _ := e.categories.GetOrCreate(ctx, path)
+	cat := e.mustGetOrCreateCategory(t, path)
 	period, _ := domain.NewStudyPeriod(nil, nil)
 	dup, _, _ := domain.NewCertification(e.ids.NewID(), n, cat, period, nil, e.clock.Now())
 
@@ -261,60 +281,162 @@ func TestSoftDeletedInvisible(t *testing.T) {
 	if page.TotalItems != 0 {
 		t.Errorf("deleted cert still listed")
 	}
-	categories, err := e.categories.ListInUse(ctx)
+	categories, err := e.categories.List(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(categories) != 0 {
-		t.Errorf("category of deleted cert still in use: %v", categories)
+	if len(categories) != 1 || categories[0].Count != 0 {
+		t.Errorf("categories = %+v, want the one category listed with count 0", categories)
 	}
 }
 
-// ── Categories ──────────────────────────────────────────────────────────────
+// ── Categories (CRUD) ────────────────────────────────────────────────────────
 
-func TestCategoryGetOrCreateNormalizes(t *testing.T) {
+func TestCategoryCreateRejectsDuplicateNormalizedPath(t *testing.T) {
 	e := newRepoEnv(t)
 	ctx := context.Background()
+	color, _ := domain.NewCategoryColor("#22D3EE")
 
 	p1, _ := domain.NewCategoryPath("  Soft Skills  ")
+	if _, err := e.categories.Create(ctx, p1, color); err != nil {
+		t.Fatal(err)
+	}
 	p2, _ := domain.NewCategoryPath("SOFT SKILLS")
-	a, err := e.categories.GetOrCreate(ctx, p1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := e.categories.GetOrCreate(ctx, p2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.ID != b.ID {
-		t.Error("normalized-equal paths created two categories")
-	}
-	if b.Path.Display() != "Soft Skills" {
-		t.Errorf("display = %q, want first-seen casing", b.Path.Display())
+	_, err := e.categories.Create(ctx, p2, color)
+	var v *domain.ValidationError
+	if !errors.As(err, &v) {
+		t.Errorf("err = %v, want ValidationError (unique path)", err)
 	}
 }
 
-func TestListInUseCounts(t *testing.T) {
+func TestCategoryGetByPathNormalizesCaseInsensitive(t *testing.T) {
+	e := newRepoEnv(t)
+	ctx := context.Background()
+	color, _ := domain.NewCategoryColor("#22D3EE")
+	p, _ := domain.NewCategoryPath("  Soft Skills  ")
+	created, err := e.categories.Create(ctx, p, color)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lookup, _ := domain.NewCategoryPath("SOFT SKILLS")
+	found, err := e.categories.GetByPath(ctx, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.ID != created.ID || found.Path.Display() != "Soft Skills" {
+		t.Errorf("found = %+v, want first-seen casing under the same id", found)
+	}
+}
+
+func TestCategoryGetByPathUnknownNotFound(t *testing.T) {
+	e := newRepoEnv(t)
+	p, _ := domain.NewCategoryPath("Nope")
+	if _, err := e.categories.GetByPath(context.Background(), p); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// TestListIncludesUnusedCategories covers backend AC-5: List must return
+// categories nobody has used yet (the new "create category" form populates
+// exactly this), not only in-use ones like the old ListInUse did.
+func TestListIncludesUnusedCategories(t *testing.T) {
 	e := newRepoEnv(t)
 	e.newCert(t, "A", "TI / Cloud / AWS", nil, nil)
 	e.newCert(t, "B", "TI / Cloud / AWS", nil, nil)
 	e.newCert(t, "C", "Soft Skills", nil, nil)
+	color, _ := domain.NewCategoryColor("#A78BFA")
+	unusedPath, _ := domain.NewCategoryPath("Never Used")
+	if _, err := e.categories.Create(context.Background(), unusedPath, color); err != nil {
+		t.Fatal(err)
+	}
 
-	categories, err := e.categories.ListInUse(context.Background())
+	categories, err := e.categories.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(categories) != 2 {
-		t.Fatalf("categories = %d, want 2", len(categories))
+	if len(categories) != 3 {
+		t.Fatalf("categories = %d, want 3 (including unused)", len(categories))
 	}
 	for _, c := range categories {
 		want := 1
-		if c.Path.Display() == "TI / Cloud / AWS" {
+		switch c.Path.Display() {
+		case "TI / Cloud / AWS":
 			want = 2
+		case "Never Used":
+			want = 0
 		}
 		if c.Count != want {
 			t.Errorf("%s count = %d, want %d", c.Path.Display(), c.Count, want)
 		}
+	}
+}
+
+func TestCategoryUpdateRenamePropagatesToCertificationsWithoutMigration(t *testing.T) {
+	e := newRepoEnv(t)
+	ctx := context.Background()
+	cert := e.newCert(t, "AWS SAA", "Cloud / AWS", nil, nil)
+	categoryID := cert.Category().ID
+
+	newPath, _ := domain.NewCategoryPath("Cloud / GCP")
+	color, _ := domain.NewCategoryColor("#22D3EE")
+	if _, err := e.categories.Update(ctx, categoryID, newPath, color); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := e.certs.FindByID(ctx, cert.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found.Category().Path.Display() != "Cloud / GCP" {
+		t.Errorf("category path = %q, want renamed path with no data migration", found.Category().Path.Display())
+	}
+}
+
+func TestCategoryUpdateUnknownIDNotFound(t *testing.T) {
+	e := newRepoEnv(t)
+	path, _ := domain.NewCategoryPath("X")
+	color, _ := domain.NewCategoryColor("#22D3EE")
+	_, err := e.categories.Update(context.Background(), "00000000-0000-7000-8000-000000000000", path, color)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCategoryDeleteUnusedSucceeds(t *testing.T) {
+	e := newRepoEnv(t)
+	ctx := context.Background()
+	color, _ := domain.NewCategoryColor("#22D3EE")
+	path, _ := domain.NewCategoryPath("Unused")
+	cat, err := e.categories.Create(ctx, path, color)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.categories.Delete(ctx, cat.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.categories.GetByPath(ctx, path); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound after delete", err)
+	}
+}
+
+func TestCategoryDeleteInUseRejected(t *testing.T) {
+	e := newRepoEnv(t)
+	ctx := context.Background()
+	cert := e.newCert(t, "AWS SAA", "Cloud / AWS", nil, nil)
+
+	err := e.categories.Delete(ctx, cert.Category().ID)
+	var v *domain.ValidationError
+	if !errors.As(err, &v) {
+		t.Errorf("err = %v, want ValidationError (in_use)", err)
+	}
+}
+
+func TestCategoryDeleteUnknownIDNotFound(t *testing.T) {
+	e := newRepoEnv(t)
+	err := e.categories.Delete(context.Background(), "00000000-0000-7000-8000-000000000000")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
 

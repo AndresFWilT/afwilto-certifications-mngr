@@ -40,8 +40,9 @@ func (p CategoryPath) Normalized() string { return p.normalized }
 // Category has identity so filters and colors stay stable across renames; it
 // is a shared reference datum, not part of the Certification aggregate.
 type Category struct {
-	ID   string
-	Path CategoryPath
+	ID    string
+	Path  CategoryPath
+	Color CategoryColor
 }
 
 type CategoryWithCount struct {
